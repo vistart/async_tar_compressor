@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive Benchmark Testing for Async Tar Compressor
+Comprehensive Benchmark Testing for Async Tar Processor
 Tests different data types, file sizes, algorithms, and compression levels
 """
 
@@ -21,7 +21,7 @@ from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
 
-from tar_compressor import AsyncTarCompressor, CompressionType, CompressionChecker
+from tar_compressor import AsyncTarProcessor, CompressionType, CompressionChecker
 
 
 @dataclass
@@ -364,11 +364,11 @@ class CompressionBenchmark:
             lzma.open = patched_open
 
         # Run compression
-        compressor = AsyncTarCompressor(algorithm)
+        processor = AsyncTarProcessor(algorithm)
         output_file = tmpdir / f"test.tar.{algorithm.value}"
 
         start_time = time.time()
-        success = await compressor.compress_with_progress([test_dir], output_file)
+        success = await processor.compress_with_progress([test_dir], output_file)
         end_time = time.time()
 
         if not success:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Async Tar Compressor Usage Examples with Benchmark Integration
+Async Tar Processor Usage Examples with Benchmark Integration
 """
 
 import asyncio
@@ -10,7 +10,7 @@ import time
 from io import BytesIO
 from pathlib import Path
 
-from tar_compressor import AsyncTarCompressor, CompressionType, CompressionChecker
+from tar_compressor import AsyncTarProcessor, CompressionType, CompressionChecker
 
 
 async def example_basic_usage():
@@ -35,10 +35,10 @@ async def example_basic_usage():
             file_path.write_text(f"Subdirectory file {i}\n" * 500)
 
         # Use gzip compression
-        compressor = AsyncTarCompressor(CompressionType.GZIP)
+        processor = AsyncTarProcessor(CompressionType.GZIP)
         output_file = Path(tmpdir) / "test_archive.tar.gz"
 
-        success = await compressor.compress_with_progress(
+        success = await processor.compress_with_progress(
             [test_dir],
             output_file
         )
@@ -61,10 +61,10 @@ async def example_memory_operations():
             test_files.append(file_path)
 
         # Compress to memory
-        compressor = AsyncTarCompressor(CompressionType.GZIP)
+        processor = AsyncTarProcessor(CompressionType.GZIP)
         print("Compressing to memory...")
 
-        memory_archive = await compressor.compress_to_memory(test_files)
+        memory_archive = await processor.compress_to_memory(test_files)
 
         if memory_archive:
             print(f"Memory archive size: {memory_archive.tell()} bytes")
@@ -100,8 +100,8 @@ async def example_direct_bytesio():
         output_buffer = BytesIO()
 
         # Compress directly to BytesIO
-        compressor = AsyncTarCompressor(CompressionType.BZIP2)
-        success = await compressor.compress_with_progress(
+        processor = AsyncTarProcessor(CompressionType.BZIP2)
+        success = await processor.compress_with_progress(
             [test_dir],
             output_buffer
         )
@@ -142,10 +142,10 @@ async def example_multiple_sources():
         sources.append(dir_path)
 
         # Use bzip2 compression
-        compressor = AsyncTarCompressor(CompressionType.BZIP2)
+        processor = AsyncTarProcessor(CompressionType.BZIP2)
         output_file = Path(tmpdir) / "multi_source.tar.bz2"
 
-        await compressor.compress_with_progress(sources, output_file)
+        await processor.compress_with_progress(sources, output_file)
 
 
 async def example_check_algorithms():
@@ -176,10 +176,10 @@ async def example_check_algorithms():
             if info.available:
                 print(f"\nTesting {info.name}...")
                 try:
-                    compressor = AsyncTarCompressor(comp_type)
+                    processor = AsyncTarProcessor(comp_type)
                     output_file = Path(tmpdir) / f"test{info.extension}"
 
-                    success = await compressor.compress_with_progress(
+                    success = await processor.compress_with_progress(
                         [test_file],
                         output_file,
                     )
@@ -233,11 +233,11 @@ async def example_different_compressions():
             print(f"\nTesting {comp_type.name} compression...")
 
             try:
-                compressor = AsyncTarCompressor(comp_type)
+                processor = AsyncTarProcessor(comp_type)
                 output_file = Path(tmpdir) / f"test.tar{algo_info[comp_type].extension}"
 
                 start_time = time.time()
-                success = await compressor.compress_with_progress(
+                success = await processor.compress_with_progress(
                     [text_file, random_file, mixed_dir],
                     output_file
                 )
@@ -295,11 +295,11 @@ async def example_interrupt_handling():
             file_path = test_dir / f"file_{i:03d}.txt"
             file_path.write_text(f"File content {i}\n" * 100)
 
-        compressor = AsyncTarCompressor(CompressionType.GZIP)
+        processor = AsyncTarProcessor(CompressionType.GZIP)
         output_file = Path(tmpdir) / "interruptible.tar.gz"
 
         print("\nStarting compression, you can try pressing Ctrl+C now...")
-        await compressor.compress_with_progress([test_dir], output_file)
+        await processor.compress_with_progress([test_dir], output_file)
 
 
 async def example_command_line_vs_interactive():
@@ -307,15 +307,15 @@ async def example_command_line_vs_interactive():
     print("\n=== Command Line vs Interactive Usage ===")
 
     print("Command line usage examples:")
-    print("  python tar_compressor.py file1.txt dir1/ -o archive.tar.gz -c gz")
-    print("  python tar_compressor.py data/ -o archive.tar.lz4 -c lz4")
+    print("  python tar_compressor.py -c file1.txt dir1/ -o archive.tar.gz -t gz")
+    print("  python tar_compressor.py -c data/ -o archive.tar.lz4 -t lz4")
     print("  python tar_compressor.py --check")
     print()
     print("Interactive mode:")
     print("  python tar_compressor.py -i")
     print("  python tar_compressor.py  # Without arguments")
     print()
-    print("The compression algorithm is determined by the -c parameter,")
+    print("The compression algorithm is determined by the -t parameter,")
     print("NOT by the output filename extension!")
 
 
@@ -349,7 +349,7 @@ async def main():
         ("Comprehensive Benchmark Suite", run_comprehensive_benchmark)
     ]
 
-    print("Async Tar Compressor Demo Program")
+    print("Async Tar Processor Demo Program")
     print("=" * 40)
 
     for i, (name, func) in enumerate(examples, 1):
