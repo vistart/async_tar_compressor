@@ -448,11 +448,20 @@ class AsyncTarProcessor:
     """Async Tar Compressor/Decompressor"""
 
     def __init__(self, compression: CompressionType = CompressionType.GZIP):
+        """
+        Initialize async tar processor
+
+        Args:
+            compression: Compression type to use
+        """
         self.compression = compression
         self.console = Console()
-        self.stats = None
         self.interrupt_handler = InterruptHandler()
         self._cancelled = False
+        self.stats: Optional[OperationStats] = None
+        self.compression_level: int = 9  # Maximum compression by default
+        # Add base_path attribute for relative path support
+        self._base_paths: Dict[Path, Path] = {}  # Maps source paths to their base paths
 
     @classmethod
     def get_supported_algorithms(cls) -> List[CompressionType]:
@@ -650,7 +659,8 @@ class AsyncTarProcessor:
             self,
             source_paths: List[Union[str, Path]],
             output_file: Union[str, Path, BinaryIO],
-            chunk_size: int = 1024 * 1024  # 1MB chunks
+            chunk_size: int = 1024 * 1024,  # 1MB chunks
+            use_relative_paths: bool = True  # New parameter
     ) -> bool:
         """
         Compress files with progress display
@@ -659,6 +669,7 @@ class AsyncTarProcessor:
             source_paths: List of files or directories to compress
             output_file: Output compressed file path or BytesIO object
             chunk_size: Chunk size for reading files
+            use_relative_paths: Whether to use relative paths in the archive
 
         Returns:
             bool: Whether completed successfully
@@ -672,6 +683,17 @@ class AsyncTarProcessor:
         try:
             # Convert paths
             paths = [Path(p) for p in source_paths]
+
+            # Determine base paths for relative path calculation
+            self._base_paths.clear()
+            if use_relative_paths:
+                for path in paths:
+                    if path.is_file():
+                        # For files, use the parent directory as base
+                        self._base_paths[path] = path.parent
+                    else:
+                        # For directories, use the directory itself as base
+                        self._base_paths[path] = path
 
             # Check if output is BytesIO or file path
             is_memory_output = isinstance(output_file, (BytesIO, BinaryIO))
@@ -716,6 +738,7 @@ class AsyncTarProcessor:
             return False
         finally:
             self.interrupt_handler.cleanup()
+            self._base_paths.clear()  # Clean up base paths
 
     async def compress_to_memory(
             self,
@@ -978,7 +1001,7 @@ class AsyncTarProcessor:
             output_file: Union[Path, BinaryIO],
             chunk_size: int
     ) -> bool:
-        """Compress using standard tarfile library"""
+        """Compress using standard tarfile library with relative path support"""
         # Create progress bar
         with Progress(
                 SpinnerColumn(),
@@ -1018,13 +1041,16 @@ class AsyncTarProcessor:
                             progress.update(overall_task, description="[red]Interrupted")
                             return False
 
+                        # Get base path for this source
+                        base_path = self._base_paths.get(path)
+
                         if path.is_file():
                             await self._add_file_with_progress(
-                                tar, path, progress, overall_task, file_task
+                                tar, path, progress, overall_task, file_task, base_path
                             )
                         elif path.is_dir():
                             await self._add_directory_with_progress(
-                                tar, path, progress, overall_task, file_task
+                                tar, path, progress, overall_task, file_task, base_path
                             )
             else:
                 # For file paths, use name parameter
@@ -1034,18 +1060,20 @@ class AsyncTarProcessor:
                             progress.update(overall_task, description="[red]Interrupted")
                             return False
 
+                        # Get base path for this source
+                        base_path = self._base_paths.get(path)
+
                         if path.is_file():
                             await self._add_file_with_progress(
-                                tar, path, progress, overall_task, file_task
+                                tar, path, progress, overall_task, file_task, base_path
                             )
                         elif path.is_dir():
                             await self._add_directory_with_progress(
-                                tar, path, progress, overall_task, file_task
+                                tar, path, progress, overall_task, file_task, base_path
                             )
 
             progress.update(overall_task, description="[green]Compression complete!")
-
-        return True
+            return True
 
     async def _compress_with_lz4(
             self,
@@ -1053,7 +1081,7 @@ class AsyncTarProcessor:
             output_file: Union[Path, BinaryIO],
             chunk_size: int
     ) -> bool:
-        """Compress using LZ4"""
+        """Compress using LZ4 with relative path support"""
         import tempfile
 
         # First create uncompressed tar file
@@ -1068,7 +1096,7 @@ class AsyncTarProcessor:
             tmp_tar = tmp_tar_path
 
         try:
-            # Create tar file
+            # Create tar file with relative paths
             self.console.print("[yellow]Creating tar archive...[/yellow]")
             success = await self._compress_with_tarfile(paths, tmp_tar, chunk_size)
 
@@ -1078,6 +1106,7 @@ class AsyncTarProcessor:
             # Apply LZ4 compression
             self.console.print("[yellow]Applying LZ4 compression...[/yellow]")
 
+            # [Rest of the LZ4 compression code remains the same...]
             with Progress(
                     SpinnerColumn(),
                     TextColumn("[progress.description]{task.description}"),
@@ -1143,9 +1172,20 @@ class AsyncTarProcessor:
             file_path: Path,
             progress: Progress,
             overall_task: int,
-            file_task: int
+            file_task: int,
+            base_path: Optional[Path] = None  # New parameter
     ):
-        """Add single file to tar with progress update"""
+        """
+        Add single file to tar with progress update
+
+        Args:
+            tar: Tar file object
+            file_path: Path to the file to add
+            progress: Progress object for updates
+            overall_task: Overall progress task ID
+            file_task: File progress task ID
+            base_path: Base path for calculating relative paths
+        """
         file_size = file_path.stat().st_size
 
         # Update file task
@@ -1183,6 +1223,17 @@ class AsyncTarProcessor:
         with open(file_path, 'rb') as f:
             wrapped_file = ProgressFileWrapper(f, update_progress)
             info = tar.gettarinfo(str(file_path))
+
+            # Calculate archive name (relative path)
+            if base_path:
+                try:
+                    # Calculate relative path from base path
+                    arcname = file_path.relative_to(base_path)
+                    info.name = str(arcname)
+                except ValueError:
+                    # If file is not under base_path, use just the filename
+                    info.name = file_path.name
+
             tar.addfile(info, wrapped_file)
 
         self.stats.processed_files += 1
@@ -1197,18 +1248,32 @@ class AsyncTarProcessor:
             dir_path: Path,
             progress: Progress,
             overall_task: int,
-            file_task: int
+            file_task: int,
+            base_path: Optional[Path] = None  # New parameter
     ):
-        """Recursively add directory to tar"""
+        """
+        Recursively add directory to tar with relative paths
+
+        Args:
+            tar: Tar file object
+            dir_path: Directory path to add
+            progress: Progress object for updates
+            overall_task: Overall progress task ID
+            file_task: File progress task ID
+            base_path: Base path for calculating relative paths
+        """
+        # Use the directory itself as base path if not specified
+        if base_path is None:
+            base_path = dir_path
+
         for item in dir_path.rglob("*"):
             if await self._check_interrupt():
                 return
 
             if item.is_file():
                 await self._add_file_with_progress(
-                    tar, item, progress, overall_task, file_task
+                    tar, item, progress, overall_task, file_task, base_path
                 )
-
     # Internal decompression methods
     async def _decompress_with_tarfile(
             self,
